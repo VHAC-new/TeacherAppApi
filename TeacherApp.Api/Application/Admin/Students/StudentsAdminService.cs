@@ -1,19 +1,26 @@
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using TeacherApp.Api.Common;
 using TeacherApp.Api.Data;
+using TeacherApp.Api.Domain;
 using TeacherApp.Contracts.Admin;
 
 namespace TeacherApp.Api.Application.Admin.Students;
 
 public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminService
 {
+    private readonly PasswordHasher<User> _passwordHasher = new();
+
     public async Task<IReadOnlyList<AdminStudentPerformanceResponse>> ListAsync(CancellationToken cancellationToken)
     {
-        var students = await db.Users.AsNoTracking()
-            .Where(u => u.Role == Roles.Student)
-            .OrderBy(u => u.Email)
-            .Select(u => new { u.Id, u.Email, u.Name })
-            .ToListAsync(cancellationToken);
+        var students = await (
+            from u in db.Users.AsNoTracking()
+            join s in db.Students.AsNoTracking() on u.Id equals s.UserId
+            where u.Role == Roles.Student
+            orderby u.Email
+            select new { u.Id, u.Email, s.FullName }
+        ).ToListAsync(cancellationToken);
 
         var totalExercises = await db.Exercises.CountAsync(cancellationToken);
 
@@ -32,7 +39,7 @@ public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminServic
             if (!attemptsByUser.TryGetValue(s.Id, out var userAttempts))
             {
                 results.Add(new AdminStudentPerformanceResponse(
-                    s.Id, s.Email, s.Name, 0, 0, 0, null));
+                    s.Id, s.Email, s.FullName, 0, 0, 0, null));
                 continue;
             }
 
@@ -52,7 +59,7 @@ public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminServic
             var lastActivity = userAttempts.Max(a => a.AttemptedAt);
 
             results.Add(new AdminStudentPerformanceResponse(
-                s.Id, s.Email, s.Name, progress, accuracy, totalAnswers, lastActivity));
+                s.Id, s.Email, s.FullName, progress, accuracy, totalAnswers, lastActivity));
         }
 
         return results;
@@ -60,12 +67,26 @@ public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminServic
 
     public async Task<AdminStudentDetailsResponse?> GetDetailsAsync(Guid studentId, CancellationToken cancellationToken)
     {
-        var student = await db.Users.AsNoTracking()
-            .Where(u => u.Id == studentId && u.Role == Roles.Student)
-            .Select(u => new { u.Id, u.Email, u.Name })
-            .FirstOrDefaultAsync(cancellationToken);
+        var row = await (
+            from u in db.Users.AsNoTracking()
+            join s in db.Students.AsNoTracking() on u.Id equals s.UserId
+            where u.Id == studentId && u.Role == Roles.Student
+            select new
+            {
+                u.Id,
+                u.Email,
+                u.IsActive,
+                s.FullName,
+                s.Cpf,
+                s.BirthDate,
+                s.Phone,
+                s.PostalCode,
+                s.Address,
+                s.Course,
+            }
+        ).FirstOrDefaultAsync(cancellationToken);
 
-        if (student is null)
+        if (row is null)
             return null;
 
         var attempts = await db.ExerciseAttempts.AsNoTracking()
@@ -80,8 +101,21 @@ public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminServic
         var lastActivity = attempts.Count > 0 ? attempts.Max(a => a.AttemptedAt) : (DateTimeOffset?)null;
 
         return new AdminStudentDetailsResponse(
-            student.Id, student.Email, student.Name,
-            totalExercises, accuracy, correctCount, incorrectCount, lastActivity);
+            row.Id,
+            row.Email,
+            row.IsActive,
+            row.FullName,
+            row.Cpf,
+            row.BirthDate,
+            row.Phone,
+            row.PostalCode,
+            row.Address,
+            row.Course,
+            totalExercises,
+            accuracy,
+            correctCount,
+            incorrectCount,
+            lastActivity);
     }
 
     public async Task<IReadOnlyList<AdminStudentAnswerResponse>> ListAnswersAsync(
@@ -92,6 +126,11 @@ public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminServic
         CancellationToken cancellationToken)
     {
         take = Math.Clamp(take, 1, 500);
+
+        var exists = await db.Users.AsNoTracking()
+            .AnyAsync(u => u.Id == studentId && u.Role == Roles.Student, cancellationToken);
+        if (!exists)
+            return [];
 
         var query = from a in db.ExerciseAttempts.AsNoTracking()
                     join e in db.Exercises.AsNoTracking() on a.ExerciseId equals e.Id
@@ -124,5 +163,68 @@ public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminServic
             .ToListAsync(cancellationToken);
 
         return rows;
+    }
+
+    public async Task<CreateStudentResponse> CreateStudentAsync(CreateStudentRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            throw new ArgumentException("Email is required.");
+
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            throw new ArgumentException("Full name is required.");
+
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var cpfDigits = StudentCpfNormalizer.ToDigits(request.Cpf);
+        if (!StudentCpfNormalizer.IsValidBrazilianCpfDigits(cpfDigits))
+            throw new ArgumentException("Invalid CPF.");
+
+        if (string.IsNullOrWhiteSpace(request.Phone)
+            || string.IsNullOrWhiteSpace(request.PostalCode)
+            || string.IsNullOrWhiteSpace(request.Address)
+            || string.IsNullOrWhiteSpace(request.Course))
+        {
+            throw new ArgumentException("Phone, postal code, address, and course are required.");
+        }
+
+        var emailTaken = await db.Users.AsNoTracking()
+            .AnyAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
+        if (emailTaken)
+            throw new InvalidOperationException("Email is already registered.");
+
+        var cpfTaken = await db.Students.AsNoTracking()
+            .AnyAsync(s => s.Cpf == cpfDigits, cancellationToken);
+        if (cpfTaken)
+            throw new InvalidOperationException("CPF is already registered.");
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = request.Email.Trim(),
+            Name = request.FullName.Trim(),
+            Role = Roles.Student,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var provisionalPassword = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24));
+        user.PasswordHash = _passwordHasher.HashPassword(user, provisionalPassword);
+
+        var student = new Student
+        {
+            UserId = user.Id,
+            FullName = request.FullName.Trim(),
+            Cpf = cpfDigits,
+            BirthDate = request.BirthDate,
+            Phone = request.Phone.Trim(),
+            PostalCode = request.PostalCode.Trim(),
+            Address = request.Address.Trim(),
+            Course = request.Course.Trim(),
+        };
+
+        db.Users.Add(user);
+        db.Students.Add(student);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new CreateStudentResponse(user.Id);
     }
 }

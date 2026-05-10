@@ -9,8 +9,13 @@ public sealed class DashboardAdminService(AppDbContext db) : IDashboardAdminServ
 {
     public async Task<DashboardAdminStatsResponse> GetStatsAsync(CancellationToken cancellationToken)
     {
-        var totalStudents = await db.Users
-            .CountAsync(u => u.Role == Roles.Student && u.IsActive, cancellationToken);
+        var totalStudents = await (
+            from u in db.Users
+            join s in db.Students on u.Id equals s.UserId
+            where u.Role == Roles.Student && u.IsActive
+            select u.Id
+        ).CountAsync(cancellationToken);
+
         var totalModules = await db.Modules.CountAsync(cancellationToken);
         var totalLessons = await db.Lessons.CountAsync(cancellationToken);
         return new DashboardAdminStatsResponse(totalStudents, totalModules, totalLessons);
@@ -18,11 +23,13 @@ public sealed class DashboardAdminService(AppDbContext db) : IDashboardAdminServ
 
     public async Task<IReadOnlyList<AdminStudentResponse>> ListStudentsAsync(CancellationToken cancellationToken)
     {
-        return await db.Users.AsNoTracking()
-            .Where(u => u.Role == Roles.Student)
-            .OrderBy(u => u.Email)
-            .Select(u => new AdminStudentResponse(u.Id, u.Email, u.IsActive))
-            .ToListAsync(cancellationToken);
+        return await (
+            from u in db.Users.AsNoTracking()
+            join s in db.Students.AsNoTracking() on u.Id equals s.UserId
+            where u.Role == Roles.Student
+            orderby u.Email
+            select new AdminStudentResponse(u.Id, u.Email, u.IsActive, s.FullName)
+        ).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<CompletedLessonAdminRowResponse>> ListCompletedLessonsAsync(
@@ -55,10 +62,12 @@ public sealed class DashboardAdminService(AppDbContext db) : IDashboardAdminServ
             .GroupBy(a => (a.UserId, a.ExerciseId))
             .ToDictionary(g => g.Key, g => g.Min(a => a.AttemptedAt));
 
-        var students = await db.Users.AsNoTracking()
-            .Where(u => u.Role == Roles.Student)
-            .Select(u => new { u.Id, u.Email })
-            .ToListAsync(cancellationToken);
+        var students = await (
+            from u in db.Users.AsNoTracking()
+            join s in db.Students.AsNoTracking() on u.Id equals s.UserId
+            where u.Role == Roles.Student
+            select new { u.Id, u.Email, s.FullName }
+        ).ToListAsync(cancellationToken);
 
         var rows = new List<CompletedLessonAdminRowResponse>();
 
@@ -91,6 +100,7 @@ public sealed class DashboardAdminService(AppDbContext db) : IDashboardAdminServ
                     rows.Add(new CompletedLessonAdminRowResponse(
                         student.Id,
                         student.Email,
+                        student.FullName,
                         lesson.Id,
                         lesson.Title,
                         lesson.ModuleId,

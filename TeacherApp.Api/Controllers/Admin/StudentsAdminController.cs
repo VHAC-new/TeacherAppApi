@@ -15,6 +15,26 @@ public sealed class StudentsAdminController(IStudentsAdminService service) : Con
     public async Task<ActionResult<IReadOnlyList<AdminStudentPerformanceResponse>>> List(CancellationToken cancellationToken)
         => Ok(await service.ListAsync(cancellationToken));
 
+    [HttpPost]
+    public async Task<ActionResult<CreateStudentResponse>> Create(
+        [FromBody] CreateStudentRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await service.CreateStudentAsync(request, cancellationToken);
+            return CreatedAtAction(nameof(Get), new { id = created.UserId }, created);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AdminStudentDetailsResponse>> Get([FromRoute] Guid id, CancellationToken cancellationToken)
     {
