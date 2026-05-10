@@ -32,12 +32,24 @@ public sealed class AdminDashboardIntegrationTests : IClassFixture<TestWebAppFac
             {
                 Id = studentId,
                 Email = "dash.student@test.local",
+                Name = "Dash Student",
                 Role = Roles.Student,
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow,
             };
             user.PasswordHash = hasher.HashPassword(user, "password123!");
             db.Users.Add(user);
+            db.Students.Add(new Student
+            {
+                UserId = studentId,
+                FullName = "Dash Student",
+                Cpf = "52998224725",
+                BirthDate = new DateOnly(2000, 1, 15),
+                Phone = "11999999999",
+                PostalCode = "01310100",
+                Address = "Rua Teste, 1",
+                Course = "Inglês",
+            });
             await db.SaveChangesAsync();
         }
 

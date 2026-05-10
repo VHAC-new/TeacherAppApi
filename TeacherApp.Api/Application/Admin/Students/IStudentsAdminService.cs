@@ -14,4 +14,6 @@ public interface IStudentsAdminService
         bool? isCorrect,
         int take,
         CancellationToken cancellationToken);
+
+    Task<CreateStudentResponse> CreateStudentAsync(CreateStudentRequest request, CancellationToken cancellationToken);
 }
