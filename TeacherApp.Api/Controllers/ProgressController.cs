@@ -32,6 +32,16 @@ public sealed class ProgressController(IProgressService progressService) : Contr
         return result is null ? NotFound() : Ok(result);
     }
 
+    [HttpGet("modules/{moduleId:guid}/lessons")]
+    public async Task<ActionResult<IReadOnlyList<LessonProgressResponse>>> GetLessonProgress(
+        [FromRoute] Guid moduleId, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        return Ok(await progressService.GetLessonProgressAsync(userId, moduleId, cancellationToken));
+    }
+
     private bool TryGetUserId(out Guid userId)
     {
         userId = Guid.Empty;

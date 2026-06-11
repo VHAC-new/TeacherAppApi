@@ -6,4 +6,5 @@ public interface IProgressService
 {
     Task<OverallProgressResponse> GetOverallAsync(Guid userId, CancellationToken cancellationToken);
     Task<ModuleProgressResponse?> GetModuleAsync(Guid userId, Guid moduleId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<LessonProgressResponse>> GetLessonProgressAsync(Guid userId, Guid moduleId, CancellationToken cancellationToken);
 }
