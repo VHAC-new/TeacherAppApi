@@ -4,11 +4,15 @@ using Microsoft.EntityFrameworkCore;
 using TeacherApp.Api.Common;
 using TeacherApp.Api.Data;
 using TeacherApp.Api.Domain;
+using TeacherApp.Api.Infrastructure.Email;
 using TeacherApp.Contracts.Admin;
 
 namespace TeacherApp.Api.Application.Admin.Students;
 
-public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminService
+public sealed class StudentsAdminService(
+    AppDbContext db,
+    IEmailService emailService,
+    ILogger<StudentsAdminService> logger) : IStudentsAdminService
 {
     private readonly PasswordHasher<User> _passwordHasher = new();
 
@@ -224,6 +228,18 @@ public sealed class StudentsAdminService(AppDbContext db) : IStudentsAdminServic
         db.Users.Add(user);
         db.Students.Add(student);
         await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await emailService.SendStudentWelcomeEmailAsync(
+                user.Email, student.FullName, provisionalPassword, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Student {UserId} created but welcome email to {Email} failed. Password must be reset manually.",
+                user.Id, user.Email);
+        }
 
         return new CreateStudentResponse(user.Id);
     }

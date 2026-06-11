@@ -18,6 +18,7 @@ using TeacherApp.Api.Application.Exercises;
 using TeacherApp.Api.Application.Media;
 using TeacherApp.Api.Application.Progress;
 using TeacherApp.Api.Data;
+using TeacherApp.Api.Infrastructure.Email;
 using TeacherApp.Api.Infrastructure.Seed;
 using TeacherApp.Api.Infrastructure.Storage;
 
@@ -74,6 +75,8 @@ builder.Services.AddScoped<IAdminLessonService, AdminLessonService>();
 builder.Services.AddScoped<IAdminExerciseService, AdminExerciseService>();
 builder.Services.AddScoped<IAdminFinalExerciseService, AdminFinalExerciseService>();
 builder.Services.AddScoped<IStudentsAdminService, StudentsAdminService>();
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
+builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.Configure<MediaS3Options>(builder.Configuration.GetSection("Media:S3"));
 
 var s3Bucket = builder.Configuration["Media:S3:Bucket"];

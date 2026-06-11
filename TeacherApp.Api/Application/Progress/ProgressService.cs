@@ -34,6 +34,40 @@ public sealed class ProgressService(AppDbContext db) : IProgressService
         return await BuildModuleProgress(userId, mod.Id, mod.Title, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<LessonProgressResponse>> GetLessonProgressAsync(Guid userId, Guid moduleId, CancellationToken cancellationToken)
+    {
+        var lessons = await db.Lessons
+            .AsNoTracking()
+            .Where(l => l.ModuleId == moduleId)
+            .OrderBy(l => l.Order)
+            .Select(l => l.Id)
+            .ToListAsync(cancellationToken);
+
+        var completedExerciseIds = await db.ExerciseAttempts
+            .AsNoTracking()
+            .Where(a => a.UserId == userId && a.ExerciseId != null && a.IsCorrect)
+            .Select(a => a.ExerciseId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var results = new List<LessonProgressResponse>();
+        foreach (var lessonId in lessons)
+        {
+            var exerciseIds = await db.Exercises
+                .AsNoTracking()
+                .Where(e => e.LessonId == lessonId)
+                .Select(e => e.Id)
+                .ToListAsync(cancellationToken);
+
+            var completed = exerciseIds.Count(id => completedExerciseIds.Contains(id));
+            var isCompleted = exerciseIds.Count > 0 && exerciseIds.All(id => completedExerciseIds.Contains(id));
+
+            results.Add(new LessonProgressResponse(lessonId, isCompleted, exerciseIds.Count, completed));
+        }
+
+        return results;
+    }
+
     private async Task<ModuleProgressResponse> BuildModuleProgress(
         Guid userId, Guid moduleId, string moduleTitle, CancellationToken cancellationToken)
     {
