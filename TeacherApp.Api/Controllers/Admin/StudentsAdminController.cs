@@ -50,4 +50,15 @@ public sealed class StudentsAdminController(IStudentsAdminService service) : Con
         [FromQuery] int take = 200,
         CancellationToken cancellationToken = default)
         => Ok(await service.ListAnswersAsync(id, moduleId, isCorrect, take, cancellationToken));
+
+    [HttpPut("{id:guid}/active")]
+    [HttpPatch("{id:guid}/active")]
+    public async Task<ActionResult<AdminStudentDetailsResponse>> SetActive(
+        [FromRoute] Guid id,
+        [FromBody] SetStudentActiveRequest request,
+        CancellationToken cancellationToken)
+    {
+        var details = await service.SetActiveAsync(id, request.IsActive, cancellationToken);
+        return details is null ? NotFound() : Ok(details);
+    }
 }

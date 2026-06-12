@@ -50,6 +50,25 @@ public sealed class AuthService(AppDbContext db, IConfiguration configuration) :
         );
     }
 
+    public async Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+            throw new ArgumentException("Current password and new password are required.");
+
+        if (request.NewPassword.Length < 6)
+            throw new ArgumentException("New password must be at least 6 characters.");
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new UnauthorizedAccessException("User not found.");
+
+        var verification = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
+        if (verification == PasswordVerificationResult.Failed)
+            throw new UnauthorizedAccessException("Current password is incorrect.");
+
+        user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private string CreateJwt(User user, DateTimeOffset expiresAtUtc)
     {
         var issuer = configuration["Jwt:Issuer"];

@@ -16,4 +16,6 @@ public interface IStudentsAdminService
         CancellationToken cancellationToken);
 
     Task<CreateStudentResponse> CreateStudentAsync(CreateStudentRequest request, CancellationToken cancellationToken);
+
+    Task<AdminStudentDetailsResponse?> SetActiveAsync(Guid studentId, bool isActive, CancellationToken cancellationToken);
 }
