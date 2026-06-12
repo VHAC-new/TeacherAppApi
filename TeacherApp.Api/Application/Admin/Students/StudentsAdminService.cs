@@ -122,6 +122,23 @@ public sealed class StudentsAdminService(
             lastActivity);
     }
 
+    public async Task<AdminStudentDetailsResponse?> SetActiveAsync(
+        Guid studentId,
+        bool isActive,
+        CancellationToken cancellationToken)
+    {
+        var user = await db.Users
+            .FirstOrDefaultAsync(u => u.Id == studentId && u.Role == Roles.Student, cancellationToken);
+
+        if (user is null)
+            return null;
+
+        user.IsActive = isActive;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return await GetDetailsAsync(studentId, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AdminStudentAnswerResponse>> ListAnswersAsync(
         Guid studentId,
         Guid? moduleId,
